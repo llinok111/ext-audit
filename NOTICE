@@ -1,0 +1,49 @@
+# 来源与第三方声明
+
+## 本工具代码
+
+`src/`、`tools/`、`test/`、`web/` 下的原创代码以 MIT 许可发布，见 `LICENSE`。
+
+## 数据来源
+
+本工具在运行时访问以下**公开只读**地址，不在交付包内附带任何数据副本：
+
+| 用途 | 地址 |
+|---|---|
+| 插件注册表 | `https://raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugins.json` |
+| 下载统计 | `https://raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugin-stats.json` |
+| 官方下架清单 | `https://raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugins-removed.json` |
+| 版本弃用清单 | `https://raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugin-deprecation.json` |
+| 客户端版本 | `https://raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/desktop-releases.json` |
+| 单插件清单 | `https://raw.githubusercontent.com/<owner>/<repo>/HEAD/manifest.json` |
+| 兼容映射 | `https://raw.githubusercontent.com/<owner>/<repo>/HEAD/versions.json` |
+| 许可证原文 | `https://raw.githubusercontent.com/<owner>/<repo>/HEAD/LICENSE*` |
+
+### 关于 obsidian-releases 仓库的许可状态（重要）
+
+截至 2026-10-24 实测：
+
+- `GET .../HEAD/LICENSE` → **404**
+- `GET .../HEAD/LICENSE.md` → **404**
+- `GET https://api.github.com/repos/obsidianmd/obsidian-releases/license` → **404 Not Found**
+
+该仓库未声明许可证。同一仓库的 `README.md` 明确说明：*"Obsidian is not open source software and this repo DOES NOT contain the source code of Obsidian."*
+
+**因此本工具采取以下处置：**
+
+1. 不把注册表或统计文件打包进交付物；
+2. 不提供「下载即可离线使用的数据集」；
+3. 缓存必须由用户显式执行 `cache` 命令生成，存放于用户指定目录，并记录来源 URL、抓取时间与 sha256；
+4. 界面与命令行输出均显示数据年龄与来源。
+
+如需在其它项目中使用这些数据，请自行评估并遵守 Obsidian 的开发者政策（<https://docs.obsidian.md/Developer+policies>）。
+
+## 插件自身的许可证
+
+每个插件由其作者独立授权，以各自仓库 `LICENSE` 原文为准。
+
+本工具对许可证的识别是**文本特征匹配**，不构成法律意见。识别结果必须与原文链接一并呈现，由使用者自行复核。
+
+## 商标
+
+Obsidian 是 Dynalist Inc. 的商标。本工具与 Obsidian 官方无隶属关系，未获其背书。

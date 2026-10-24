@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>扩展发现与核验台 · Obsidian 社区插件</title>
+<style>/*__CSS__*/</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      扩展发现与核验台
+      <span class="sub">Obsidian 社区插件 · 只陈述可观测事实</span>
+    </div>
+    <div class="freshness" id="freshness">
+      <span class="dot" id="freshDot"></span>
+      <span id="freshText">正在加载数据源…</span>
+    </div>
+  </header>
+
+  <div class="controls">
+    <div class="search-wrap">
+      <span class="icon">⌕</span>
+      <input id="q" type="text" placeholder="搜索插件名称、作者、描述、仓库…" autocomplete="off" spellcheck="false">
+    </div>
+    <label class="field">
+      我的 Obsidian 版本
+      <input id="appVer" type="text" value="1.14.5" spellcheck="false">
+    </label>
+    <select id="fLic" title="按许可证筛选（仅对已核验项有效）">
+      <option value="">全部许可证</option>
+      <option value="unknown">许可证未知/未核验</option>
+      <option value="MIT">MIT</option>
+      <option value="GPL-3.0">GPL-3.0</option>
+      <option value="AGPL-3.0">AGPL-3.0</option>
+      <option value="Apache-2.0">Apache-2.0</option>
+      <option value="ISC">ISC</option>
+    </select>
+    <select id="fState" title="按核验状态筛选">
+      <option value="">全部状态</option>
+      <option value="fail">已失效 / 已下架</option>
+      <option value="warn">有瑕疵</option>
+      <option value="ok">无异常</option>
+      <option value="unverified">未深度核验</option>
+    </select>
+    <button class="btn" id="toggleRemoved" title="切换是否显示官方已下架的插件">隐藏已下架</button>
+    <button class="btn primary" id="verifyAll">深度核验当前结果</button>
+  </div>
+
+  <div class="main">
+    <div class="list-pane">
+      <div class="list-meta" id="listMeta">—</div>
+      <div id="rows"></div>
+    </div>
+    <div class="detail" id="detail">
+      <div class="empty">
+        <div class="big">选择左侧任一插件</div>
+        <div>将展示来源链接、版本信息、许可证识别依据与可执行检查结果</div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="foot">
+    <span id="footData">数据源：官方 obsidian-releases 注册表</span>
+    <span class="sep">|</span>
+    <button class="link" id="openLimits">数据时间与局限</button>
+    <span class="sep">|</span>
+    <span>构建 __BUILD_TIME__</span>
+  </footer>
+</div>
+
+<dialog class="limits" id="limitsDlg">
+  <div class="dlg-head">
+    <h2>数据时间与局限</h2>
+    <button class="btn" id="closeLimits">关闭</button>
+  </div>
+  <div class="dlg-body" id="limitsBody"></div>
+</dialog>
+
+<script>/*__JS__*/</script>
+</body>
+</html>

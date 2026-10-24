@@ -1,0 +1,1899 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>扩展发现与核验台 · Obsidian 社区插件</title>
+<style>/*
+ * 配色严格取自 memory-topics/05-视觉与颜色规范.md：
+ *   底/面/线/字 走 §5.3 灰阶；强调单色相（矢车菊蓝）；状态色独立归类（§5.4 六类角色）。
+ * 正文对比度均已核：浅灰 #999999 on 炭黑 #1A1A1A ≈ 6.1:1；亮灰 #CCCCCC ≈ 9.4:1。
+ * 状态色：中海蓝绿 #3CB371 ≈ 6.5:1，橙色 #FFA500 ≈ 8.7:1，番茄色 #FF6347 ≈ 5.9:1。
+ * 不新增规范外色值。
+ */
+:root {
+  --c-bg: #000000;        /* 纯黑 */
+  --c-surface: #1A1A1A;   /* 炭黑 */
+  --c-raised: #333333;    /* 深灰 */
+  --c-line: #333333;      /* 深灰 */
+  --c-ink: #F0F0F0;       /* 浅银 */
+  --c-ink-2: #CCCCCC;     /* 亮灰 */
+  --c-ink-3: #999999;     /* 浅灰 */
+  --c-accent: #6495ED;    /* 矢车菊蓝 */
+  --c-ok: #3CB371;        /* 中海蓝绿 */
+  --c-warn: #FFA500;      /* 橙色 */
+  --c-fail: #FF6347;      /* 番茄色 */
+  --c-unknown: #CCCCCC;   /* 亮灰 */
+  --mono: ui-monospace, "Cascadia Mono", "Consolas", "SF Mono", monospace;
+  --sans: -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--c-bg);
+  color: var(--c-ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+button, input, select { font: inherit; color: inherit; }
+
+/* ---------- 布局 ---------- */
+.app {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  height: 100vh;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+header.top {
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--c-line);
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+}
+.brand .sub {
+  font-weight: 400;
+  color: var(--c-ink-3);
+  font-size: 12px;
+  margin-left: 10px;
+  letter-spacing: 0;
+}
+
+.freshness {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--c-ink-3);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.freshness .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--c-ok); display: inline-block;
+}
+.freshness .dot.stale { background: var(--c-warn); }
+.freshness .dot.failed { background: var(--c-fail); }
+
+/* ---------- 控制区 ---------- */
+.controls {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--c-line);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: var(--c-surface);
+}
+
+.search-wrap { position: relative; flex: 1 1 320px; min-width: 240px; }
+.search-wrap input {
+  width: 100%;
+  padding: 9px 12px 9px 34px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-line);
+  border-radius: 4px;
+  outline: none;
+}
+.search-wrap input:focus { border-color: var(--c-accent); }
+.search-wrap .icon {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  color: var(--c-ink-3); font-size: 13px; pointer-events: none;
+}
+
+select, .btn {
+  padding: 8px 10px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-line);
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--c-ink-2);
+  font-size: 13px;
+}
+select:hover, .btn:hover { border-color: var(--c-ink-3); }
+.btn.primary {
+  background: transparent;
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.field { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--c-ink-3); }
+.field input[type="text"] {
+  width: 76px;
+  padding: 7px 8px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-line);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  outline: none;
+}
+.field input[type="text"]:focus { border-color: var(--c-accent); }
+
+/* ---------- 主体 ---------- */
+.main {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) 1fr;
+  min-height: 0;
+}
+
+.list-pane {
+  border-right: 1px solid var(--c-line);
+  overflow-y: auto;
+  min-height: 0;
+}
+.list-meta {
+  padding: 10px 16px;
+  font-size: 11.5px;
+  color: var(--c-ink-3);
+  font-family: var(--mono);
+  border-bottom: 1px solid var(--c-line);
+  position: sticky; top: 0;
+  background: var(--c-bg);
+  z-index: 2;
+}
+
+.row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--c-line);
+  border-left: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+}
+.row:hover { background: var(--c-surface); }
+.row.active { background: var(--c-surface); border-left-color: var(--c-accent); }
+.row .rname { font-weight: 600; font-size: 13.5px; color: var(--c-ink); }
+.row .rmeta {
+  font-family: var(--mono); font-size: 11px; color: var(--c-ink-3);
+  margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap;
+}
+.row .rdesc {
+  font-size: 12px; color: var(--c-ink-3); margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.row .matched {
+  font-family: var(--mono); font-size: 10.5px; color: var(--c-accent);
+  margin-top: 3px;
+}
+
+/* ---------- 详情 ---------- */
+.detail {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 20px 24px 28px;
+}
+
+.empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; color: var(--c-ink-3); gap: 8px; text-align: center;
+  font-size: 13px;
+}
+.empty .big { font-size: 15px; color: var(--c-ink-2); }
+
+.d-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.d-title { font-size: 20px; font-weight: 650; letter-spacing: 0.2px; }
+.d-id { font-family: var(--mono); font-size: 11.5px; color: var(--c-ink-3); margin-top: 2px; }
+.d-desc { color: var(--c-ink-2); margin: 12px 0 0; font-size: 13.5px; }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px; border-radius: 3px;
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.badge.ok { color: var(--c-ok); }
+.badge.warn { color: var(--c-warn); }
+.badge.fail { color: var(--c-fail); }
+.badge.unknown { color: var(--c-unknown); }
+.badge.neutral { color: var(--c-ink-3); border-color: var(--c-line); }
+
+section.block { margin-top: 24px; }
+section.block > h3 {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: 1.1px;
+  color: var(--c-ink-3); font-weight: 600; margin: 0 0 10px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--c-line);
+}
+
+dl.kv { display: grid; grid-template-columns: 132px 1fr; gap: 7px 16px; margin: 0; }
+dl.kv dt { color: var(--c-ink-3); font-size: 12.5px; }
+dl.kv dd { margin: 0; font-size: 13px; color: var(--c-ink); word-break: break-word; }
+dl.kv dd.mono { font-family: var(--mono); font-size: 12.5px; }
+dl.kv dd.none { color: var(--c-ink-3); font-style: normal; }
+
+a { color: var(--c-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.check {
+  display: flex; gap: 10px; padding: 8px 0;
+  border-bottom: 1px solid var(--c-line);
+  align-items: baseline;
+}
+.check:last-child { border-bottom: 0; }
+.check .lvl {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 700;
+  width: 62px; flex: 0 0 62px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.check .lvl.info { color: var(--c-ink-3); }
+.check .lvl.warn { color: var(--c-warn); }
+.check .lvl.fail { color: var(--c-fail); }
+.check .lvl.unknown { color: var(--c-unknown); }
+.check .body { flex: 1; min-width: 0; }
+.check .ctitle { font-size: 13px; color: var(--c-ink); }
+.check .cdetail { font-size: 12px; color: var(--c-ink-3); margin-top: 2px; }
+.check .cbasis {
+  font-family: var(--mono); font-size: 11px; color: var(--c-ink-3);
+  margin-top: 4px; padding: 5px 8px; background: var(--c-surface);
+  border-left: 2px solid var(--c-line); white-space: pre-wrap; word-break: break-word;
+}
+
+.lic-text {
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.55;
+  color: var(--c-ink-2); background: var(--c-surface);
+  border: 1px solid var(--c-line); border-radius: 4px;
+  padding: 10px 12px; max-height: 190px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+.notice {
+  font-size: 12px; color: var(--c-ink-3); line-height: 1.7;
+  padding: 10px 12px; background: var(--c-surface);
+  border-left: 2px solid var(--c-warn); border-radius: 3px;
+}
+
+/* ---------- 页脚 ---------- */
+footer.foot {
+  border-top: 1px solid var(--c-line);
+  padding: 10px 24px;
+  font-size: 11.5px;
+  color: var(--c-ink-3);
+  display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+}
+footer.foot .sep { color: var(--c-line); }
+footer.foot button.link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--c-accent); font-size: 11.5px;
+}
+
+dialog.limits {
+  background: var(--c-surface); color: var(--c-ink);
+  border: 1px solid var(--c-line); border-radius: 6px;
+  max-width: 720px; width: calc(100% - 48px); padding: 0;
+}
+dialog.limits::backdrop { background: rgba(0,0,0,0.72); }
+dialog.limits .dlg-head {
+  padding: 16px 20px; border-bottom: 1px solid var(--c-line);
+  display: flex; align-items: center; justify-content: space-between;
+}
+dialog.limits .dlg-head h2 { margin: 0; font-size: 15px; font-weight: 650; }
+dialog.limits .dlg-body { padding: 16px 20px; max-height: 60vh; overflow: auto; }
+dialog.limits ul { margin: 0; padding-left: 18px; }
+dialog.limits li { margin-bottom: 9px; font-size: 13px; color: var(--c-ink-2); line-height: 1.65; }
+dialog.limits .src-row {
+  font-family: var(--mono); font-size: 11.5px;
+  display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--c-line);
+  align-items: baseline;
+}
+dialog.limits .src-row:last-child { border-bottom: 0; }
+
+.spinner {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid var(--c-line); border-top-color: var(--c-accent);
+  animation: spin 0.75s linear infinite; display: inline-block;
+  vertical-align: -2px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.progress {
+  font-family: var(--mono); font-size: 11px; color: var(--c-ink-3);
+  padding: 6px 16px; border-bottom: 1px solid var(--c-line);
+  background: var(--c-surface);
+}
+
+@media (max-width: 900px) {
+  .main { grid-template-columns: 1fr; }
+  .list-pane { border-right: 0; border-bottom: 1px solid var(--c-line); max-height: 42vh; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      扩展发现与核验台
+      <span class="sub">Obsidian 社区插件 · 只陈述可观测事实</span>
+    </div>
+    <div class="freshness" id="freshness">
+      <span class="dot" id="freshDot"></span>
+      <span id="freshText">正在加载数据源…</span>
+    </div>
+  </header>
+
+  <div class="controls">
+    <div class="search-wrap">
+      <span class="icon">⌕</span>
+      <input id="q" type="text" placeholder="搜索插件名称、作者、描述、仓库…" autocomplete="off" spellcheck="false">
+    </div>
+    <label class="field">
+      我的 Obsidian 版本
+      <input id="appVer" type="text" value="1.14.5" spellcheck="false">
+    </label>
+    <select id="fLic" title="按许可证筛选（仅对已核验项有效）">
+      <option value="">全部许可证</option>
+      <option value="unknown">许可证未知/未核验</option>
+      <option value="MIT">MIT</option>
+      <option value="GPL-3.0">GPL-3.0</option>
+      <option value="AGPL-3.0">AGPL-3.0</option>
+      <option value="Apache-2.0">Apache-2.0</option>
+      <option value="ISC">ISC</option>
+    </select>
+    <select id="fState" title="按核验状态筛选">
+      <option value="">全部状态</option>
+      <option value="fail">已失效 / 已下架</option>
+      <option value="warn">有瑕疵</option>
+      <option value="ok">无异常</option>
+      <option value="unverified">未深度核验</option>
+    </select>
+    <button class="btn" id="toggleRemoved" title="切换是否显示官方已下架的插件">隐藏已下架</button>
+    <button class="btn primary" id="verifyAll">深度核验当前结果</button>
+  </div>
+
+  <div class="main">
+    <div class="list-pane">
+      <div class="list-meta" id="listMeta">—</div>
+      <div id="rows"></div>
+    </div>
+    <div class="detail" id="detail">
+      <div class="empty">
+        <div class="big">选择左侧任一插件</div>
+        <div>将展示来源链接、版本信息、许可证识别依据与可执行检查结果</div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="foot">
+    <span id="footData">数据源：官方 obsidian-releases 注册表</span>
+    <span class="sep">|</span>
+    <button class="link" id="openLimits">数据时间与局限</button>
+    <span class="sep">|</span>
+    <span>构建 2026-10-24T11:20:55.028Z</span>
+  </footer>
+</div>
+
+<dialog class="limits" id="limitsDlg">
+  <div class="dlg-head">
+    <h2>数据时间与局限</h2>
+    <button class="btn" id="closeLimits">关闭</button>
+  </div>
+  <div class="dlg-body" id="limitsBody"></div>
+</dialog>
+
+<script>(function(){
+'use strict';
+/* ===== src/sources.mjs ===== */
+/**
+ * 数据源定义与获取层。
+ *
+ * 设计约束（全部来自 2026-10-24 实测，见 docs/FINDINGS.md）：
+ * 1. obsidian-releases 仓库无 LICENSE（raw 404 + GitHub license API 404）→ 本工具
+ *    不在仓库内打包注册表快照，一律运行时拉取，只缓存到用户本机 localStorage。
+ * 2. raw.githubusercontent.com 返回 Access-Control-Allow-Origin: *，浏览器可直连，
+ *    因此无需自建代理。
+ * 3. 该域名在受限网络下会间歇性连接失败（实测首轮 500 条中 257 条失败，重试后
+ *    225 条恢复、0 条真 404）。所以网络失败必须标记为 UNKNOWN，绝不可当作 NOT_FOUND。
+ */
+
+const REGISTRY_BASE =
+  'https://raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD';
+
+/** 官方注册表与辅助清单。全部为公开只读 JSON，无需认证。 */
+const SOURCES = {
+  registry: {
+    id: 'registry',
+    url: `${REGISTRY_BASE}/community-plugins.json`,
+    label: '社区插件注册表',
+    fields: ['id', 'name', 'author', 'description', 'repo'],
+    note: '扁平数组。仅 5 个字段，不含版本、许可证、最低应用版本。',
+  },
+  stats: {
+    id: 'stats',
+    url: `${REGISTRY_BASE}/community-plugin-stats.json`,
+    label: '下载统计',
+    note: '以插件 id 为键；含 downloads、updated(ms) 与逐版本下载数。',
+  },
+  removed: {
+    id: 'removed',
+    url: `${REGISTRY_BASE}/community-plugins-removed.json`,
+    label: '已下架清单',
+    note: '含 id/name/reason/issue，是官方承认的失效来源。',
+  },
+  deprecation: {
+    id: 'deprecation',
+    url: `${REGISTRY_BASE}/community-plugin-deprecation.json`,
+    label: '版本弃用清单',
+    note: '插件 id → 被官方标记弃用的版本数组。',
+  },
+  desktop: {
+    id: 'desktop',
+    url: `${REGISTRY_BASE}/desktop-releases.json`,
+    label: '客户端版本',
+    note: '含 minimumVersion / latestVersion，用于兼容性判断的版本基线。',
+  },
+};
+
+/** 单个插件 manifest 的地址。HEAD 指向默认分支，避免猜分支名。 */
+function manifestUrl(repo) {
+  return `https://raw.githubusercontent.com/${repo}/HEAD/manifest.json`;
+}
+
+/** versions.json：应用版本 → 兼容插件版本映射，仅部分插件提供。 */
+function versionsUrl(repo) {
+  return `https://raw.githubusercontent.com/${repo}/HEAD/versions.json`;
+}
+
+/**
+ * 许可证文件候选名。实测样本里出现过 LICENSE / LICENSE.txt / LICENSE.md /
+ * COPYING，也有完全缺失的仓库，所以这里必须允许「找不到」。
+ */
+const LICENSE_FILENAMES = [
+  'LICENSE',
+  'LICENSE.md',
+  'LICENSE.txt',
+  'LICENCE',
+  'LICENCE.md',
+  'COPYING',
+  'COPYING.md',
+];
+
+function licenseUrl(repo, filename) {
+  return `https://raw.githubusercontent.com/${repo}/HEAD/${filename}`;
+}
+
+/**
+ * 带超时与重试的抓取。
+ *
+ * 关键点：fetch 在受限网络下会抛 TypeError / AbortError，这类错误**不是**
+ * 资源不存在的证据。返回结构化结果而非抛异常，让上层能区分三态：
+ *   ok      → 拿到了
+ *   missing → 明确 404（服务端说没有）
+ *   unknown → 网络层失败（超时、连接重置、DNS），结论不可用
+ */
+async function fetchResource(url, opts = {}) {
+  const {
+    timeoutMs = 12000,
+    retries = 2,
+    backoffMs = 700,
+    fetchImpl = globalThis.fetch,
+    signal,
+  } = opts;
+
+  let last = { state: 'unknown', url, reason: 'not_attempted', attempts: 0 };
+
+  for (let attempt = 1; attempt <= retries + 1; attempt += 1) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const onAbort = () => ctrl.abort();
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+
+    try {
+      const res = await fetchImpl(url, {
+        signal: ctrl.signal,
+        headers: { 'User-Agent': 'ext-audit/1.0 (metadata verifier)' },
+        cache: 'no-store',
+      });
+      last = {
+        state: res.status === 200 ? 'ok' : res.status === 404 ? 'missing' : 'unknown',
+        status: res.status,
+        url,
+        attempts: attempt,
+        body: null,
+        reason: res.status === 200 || res.status === 404 ? null : `http_${res.status}`,
+      };
+      if (res.status === 200) {
+        last.body = await res.text();
+        last.fetchedAt = Date.now();
+        return last;
+      }
+      // 404 是确定性结论，不重试。5xx / 429 属于暂时性，值得重试。
+      if (res.status === 404) return last;
+    } catch (err) {
+      last = {
+        state: 'unknown',
+        url,
+        attempts: attempt,
+        reason: err?.name === 'AbortError' ? 'timeout' : `network_${err?.name || 'error'}`,
+        body: null,
+      };
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+    }
+
+    if (attempt <= retries) {
+      await new Promise((r) => setTimeout(r, backoffMs * attempt));
+    }
+  }
+  return last;
+}
+
+/** 抓取并解析 JSON，解析失败单独归类，避免与网络失败混淆。 */
+async function fetchJson(url, opts = {}) {
+  const res = await fetchResource(url, opts);
+  if (res.state !== 'ok') return res;
+  try {
+    return { ...res, data: JSON.parse(res.body), body: undefined };
+  } catch (err) {
+    return { ...res, state: 'invalid', reason: `json_parse:${err.message}`, body: undefined };
+  }
+}
+
+
+/* ===== src/license.mjs ===== */
+/**
+ * 许可证识别。
+ *
+ * 纪律：这里做的是**文本特征匹配**，不是法律判断。
+ * - 匹配不到 → 'unknown'，绝不让它掉到某个默认值上。
+ * - 匹配到多组互相冲突的特征 → 'ambiguous'。
+ * - 只有特征足够唯一时才给出 SPDX 标识。
+ * 界面上必须同时呈现「识别依据」与「原文链接」，由用户自行复核。
+ */
+
+/**
+ * 规则表。每条含唯一性要求：命中 anchors 全部且 exclusion 不成立才判定。
+ * anchors 为大小写不敏感的子串，正则仅用于需要结构的场景。
+ */
+const RULES = [
+  {
+    spdx: 'MIT',
+    name: 'MIT License',
+    anchors: [
+      /permission is hereby granted, free of charge/i,
+      /the above copyright notice and this permission notice/i,
+      /THE SOFTWARE IS PROVIDED "?AS IS"?/i,
+    ],
+    exclusion: [/GNU (AFFERO|LESSER|GENERAL) PUBLIC LICENSE/i],
+  },
+  {
+    spdx: 'Apache-2.0',
+    name: 'Apache License 2.0',
+    anchors: [/Apache License\s*,?\s*Version 2\.0/i, /www\.apache\.org\/licenses/i],
+    exclusion: [/GNU (AFFERO|LESSER|GENERAL) PUBLIC LICENSE/i],
+  },
+  {
+    spdx: 'AGPL-3.0',
+    name: 'GNU Affero General Public License v3.0',
+    anchors: [/GNU AFFERO GENERAL PUBLIC LICENSE/i, /Version 3/i],
+    exclusion: [],
+  },
+  {
+    spdx: 'LGPL-3.0',
+    name: 'GNU Lesser General Public License v3.0',
+    anchors: [/GNU LESSER GENERAL PUBLIC LICENSE/i, /Version 3/i],
+    exclusion: [/GNU AFFERO GENERAL PUBLIC LICENSE/i],
+  },
+  {
+    spdx: 'LGPL-2.1',
+    name: 'GNU Lesser General Public License v2.1',
+    anchors: [/GNU LESSER GENERAL PUBLIC LICENSE/i, /Version 2\.1/i],
+    exclusion: [/GNU AFFERO GENERAL PUBLIC LICENSE/i],
+  },
+  {
+    spdx: 'GPL-3.0',
+    name: 'GNU General Public License v3.0',
+    anchors: [
+      /GNU GENERAL PUBLIC LICENSE/i,
+      /Version 3/i,
+    ],
+    // 关键：LGPL/Affero 文本里也含 "GNU ... GENERAL PUBLIC LICENSE"，必须先排除
+    exclusion: [/GNU (LESSER|AFFERO) GENERAL PUBLIC LICENSE/i],
+  },
+  {
+    spdx: 'GPL-2.0',
+    name: 'GNU General Public License v2.0',
+    anchors: [/GNU GENERAL PUBLIC LICENSE/i, /Version 2/i],
+    exclusion: [/GNU (LESSER|AFFERO) GENERAL PUBLIC LICENSE/i],
+  },
+  {
+    spdx: 'MPL-2.0',
+    name: 'Mozilla Public License 2.0',
+    anchors: [/Mozilla Public License\s*(Version\s*)?2\.0/i],
+    exclusion: [],
+  },
+  {
+    spdx: 'BSD-3-Clause',
+    name: 'BSD 3-Clause License',
+    anchors: [
+      /Redistribution and use in source and binary forms/i,
+      /Neither the name of/i,
+    ],
+    exclusion: [],
+  },
+  {
+    spdx: 'BSD-2-Clause',
+    name: 'BSD 2-Clause License',
+    anchors: [/Redistribution and use in source and binary forms/i],
+    exclusion: [/Neither the name of/i],
+  },
+  {
+    spdx: 'ISC',
+    name: 'ISC License',
+    anchors: [
+      /Permission to use, copy, modify, and\/or distribute this software/i,
+      /THE SOFTWARE IS PROVIDED "?AS IS"?/i,
+    ],
+    exclusion: [],
+  },
+  {
+    spdx: 'Unlicense',
+    name: 'The Unlicense',
+    anchors: [/This is free and unencumbered software released into the public domain/i],
+    exclusion: [],
+  },
+  {
+    spdx: 'CC0-1.0',
+    name: 'Creative Commons Zero v1.0 Universal',
+    anchors: [/CC0 1\.0 Universal/i],
+    exclusion: [],
+  },
+];
+
+/** 识别一段许可证原文。返回结构化结论，永不返回 null。 */
+function detectLicense(text) {
+  if (typeof text !== 'string' || text.trim().length === 0) {
+    return {
+      spdx: null,
+      name: null,
+      confidence: 'none',
+      evidence: [],
+      note: '未取得许可证原文',
+    };
+  }
+
+  // 只看前 4000 字符：许可证头部足以判定，尾部多是附录与免责声明噪声
+  const head = text.slice(0, 4000);
+  const hits = [];
+
+  for (const rule of RULES) {
+    const allAnchors = rule.anchors.every((re) => re.test(head));
+    if (!allAnchors) continue;
+    const excluded = rule.exclusion.some((re) => re.test(head));
+    if (excluded) continue;
+    hits.push(rule);
+  }
+
+  if (hits.length === 0) {
+    return {
+      spdx: null,
+      name: null,
+      confidence: 'none',
+      evidence: [],
+      note: '原文存在但不匹配任何已知许可证特征，需人工判定',
+    };
+  }
+
+  if (hits.length > 1) {
+    return {
+      spdx: null,
+      name: null,
+      confidence: 'ambiguous',
+      candidates: hits.map((h) => h.spdx),
+      evidence: hits.map((h) => `${h.spdx}: ${h.anchors.map(String).join(' | ')}`),
+      note: `同时命中 ${hits.length} 组特征（${hits.map((h) => h.spdx).join(', ')}），不做单选`,
+    };
+  }
+
+  const hit = hits[0];
+  return {
+    spdx: hit.spdx,
+    name: hit.name,
+    confidence: 'matched',
+    evidence: hit.anchors.map((re) => String(re)),
+    note: '基于原文特征匹配，非法律结论；请核对原文',
+  };
+}
+
+/** 许可证对二次分发/修改的粗分类，仅作提示，不替代法律意见。 */
+function licenseClass(spdx) {
+  if (!spdx) return { key: 'unknown', label: '未知' };
+  if (spdx === 'MIT' || spdx === 'ISC' || spdx === 'BSD-2-Clause' || spdx === 'BSD-3-Clause' || spdx === 'Apache-2.0') {
+    return { key: 'permissive', label: '宽松型' };
+  }
+  if (spdx === 'Unlicense' || spdx === 'CC0-1.0') {
+    return { key: 'public-domain', label: '公共领域' };
+  }
+  if (spdx.startsWith('GPL') || spdx.startsWith('AGPL') || spdx.startsWith('LGPL') || spdx === 'MPL-2.0') {
+    return { key: 'copyleft', label: '传染型' };
+  }
+  return { key: 'unknown', label: '未知' };
+}
+
+
+/* ===== src/verify.mjs ===== */
+/**
+ * 版本比较、兼容性判定与基础检查。
+ *
+ * 核心纪律：
+ * - 兼容性只有三种结论：compatible / incompatible / undetermined。
+ *   「不知道用户装的是哪个版本」时必须是 undetermined，不能默认 compatible。
+ * - 检查项只陈述**可观测事实**，不产出「安全」结论。安全检查的缺失（例如没有
+ *   官方安全评分接口）本身要作为一条 finding 呈现。
+ */
+
+/**
+ * 解析 semver 宽松形式（允许 1.2、1.2.3-beta、v1.2.3）。
+ * 严格性要求：必须整串匹配，不能只吃前缀。否则 "1.x.0" 会被误读成 "1.0.0"，
+ * 进而污染兼容性判断（实测该缺陷由单元测试抓出）。
+ */
+function parseVersion(input) {
+  if (typeof input !== 'string') return null;
+  const m = input
+    .trim()
+    .match(/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/);
+  if (!m) return null;
+  return {
+    major: Number(m[1]),
+    minor: m[2] === undefined ? 0 : Number(m[2]),
+    patch: m[3] === undefined ? 0 : Number(m[3]),
+    pre: m[4] || null,
+    raw: input.trim(),
+    // 段数决定「精确度」：1.2 只知道到 minor，1 只知道到 major
+    precision: m[3] !== undefined ? 3 : m[2] !== undefined ? 2 : 1,
+  };
+}
+
+/** 比较两个版本。a<b 返回 -1，相等 0，a>b 返回 1；任一方不可解析返回 null。 */
+function compareVersions(a, b) {
+  const va = parseVersion(a);
+  const vb = parseVersion(b);
+  if (!va || !vb) return null;
+  for (const k of ['major', 'minor', 'patch']) {
+    if (va[k] !== vb[k]) return va[k] < vb[k] ? -1 : 1;
+  }
+  // 预发布版本低于同号正式版
+  if (va.pre && !vb.pre) return -1;
+  if (!va.pre && vb.pre) return 1;
+  if (va.pre && vb.pre) return va.pre < vb.pre ? -1 : va.pre > vb.pre ? 1 : 0;
+  return 0;
+}
+
+/**
+ * 判断插件是否能装在给定 Obsidian 版本上。
+ *
+ * @param {object} p
+ * @param {string|null} p.minAppVersion  插件 manifest 声明的最低应用版本
+ * @param {string|null} p.appVersion      用户/基线的 Obsidian 版本
+ * @param {object|null} p.versionsMap     versions.json（app 版本 → 插件版本）
+ * @param {string|null} p.pluginVersion   当前插件版本
+ */
+function checkCompatibility({ minAppVersion, appVersion, versionsMap, pluginVersion }) {
+  if (!minAppVersion) {
+    return {
+      verdict: 'undetermined',
+      reason: '插件 manifest 未声明 minAppVersion，无法判断版本下限',
+      basis: null,
+    };
+  }
+  const minParsed = parseVersion(minAppVersion);
+  if (!minParsed) {
+    return {
+      verdict: 'undetermined',
+      reason: `minAppVersion "${minAppVersion}" 不是可解析的版本号`,
+      basis: null,
+    };
+  }
+  if (!appVersion) {
+    return {
+      verdict: 'undetermined',
+      reason: '未提供 Obsidian 版本，无法比较',
+      basis: { minAppVersion, appVersion: null },
+    };
+  }
+  const appParsed = parseVersion(appVersion);
+  if (!appParsed) {
+    return {
+      verdict: 'undetermined',
+      reason: `给定应用版本 "${appVersion}" 不可解析`,
+      basis: { minAppVersion, appVersion },
+    };
+  }
+
+  const cmp = compareVersions(appVersion, minAppVersion);
+  if (cmp === null) {
+    return {
+      verdict: 'undetermined',
+      reason: '版本比较失败',
+      basis: { minAppVersion, appVersion },
+    };
+  }
+
+  if (cmp >= 0) {
+    return {
+      verdict: 'compatible',
+      reason: `应用版本 ${appVersion} ≥ 最低要求 ${minAppVersion}`,
+      basis: { minAppVersion, appVersion },
+    };
+  }
+
+  // 应用版本低于最低要求：versions.json 若能给出兼容的旧版插件，则说明「有可用回退」
+  if (versionsMap && typeof versionsMap === 'object') {
+    const fallback = resolveFallbackVersion(versionsMap, appVersion);
+    if (fallback) {
+      return {
+        verdict: 'incompatible',
+        reason: `当前插件版本 ${pluginVersion || '?'} 要求 ${minAppVersion}，高于应用版本 ${appVersion}；但 versions.json 提供了兼容回退版本 ${fallback}`,
+        basis: { minAppVersion, appVersion, fallbackVersion: fallback },
+        hasFallback: true,
+      };
+    }
+    return {
+      verdict: 'incompatible',
+      reason: `要求 ${minAppVersion}，高于应用版本 ${appVersion}；versions.json 未提供可回退版本`,
+      basis: { minAppVersion, appVersion },
+      hasFallback: false,
+    };
+  }
+
+  return {
+    verdict: 'incompatible',
+    reason: `要求 ${minAppVersion}，高于应用版本 ${appVersion}；该插件未提供 versions.json，无回退路径`,
+    basis: { minAppVersion, appVersion },
+    hasFallback: false,
+  };
+}
+
+/**
+ * 从 versions.json 找出适配给定应用版本的最高插件版本。
+ * versions.json 形如 { "1.4.0": "2.1.0", "1.5.0": "2.2.0" }（应用版本 → 插件版本）。
+ */
+function resolveFallbackVersion(versionsMap, appVersion) {
+  const entries = Object.entries(versionsMap)
+    .map(([app, plugin]) => ({ app, plugin, parsed: parseVersion(app) }))
+    .filter((e) => e.parsed);
+  if (entries.length === 0) return null;
+
+  const eligible = entries.filter((e) => compareVersions(appVersion, e.app) >= 0);
+  if (eligible.length === 0) return null;
+
+  eligible.sort((a, b) => compareVersions(b.app, a.app));
+  return eligible[0].plugin;
+}
+
+/**
+ * 基础检查。每项输出 { id, level, title, detail, basis, advisory }。
+ * level: info / warn / unknown / fail —— 注意没有 "pass=safe" 这一档。
+ *
+ * advisory=true 表示「常驻能力边界声明」，不参与整体状态汇总。
+ * 否则像「无官方安全评分」这种对每个插件都成立的说明，会把所有插件的状态
+ * 永久压成 unknown，使状态字段失去区分度（此缺陷由端到端实测抓出）。
+ */
+function runChecks(record, ctx = {}) {
+  const checks = [];
+  const push = (id, level, title, detail, basis = null, advisory = false) =>
+    checks.push({ id, level, title, detail, basis, advisory });
+
+  const { manifest, license, removedEntry, deprecationEntry, versionsMap, repoStatus } = record;
+
+  // 1. 仓库可达性 —— 三态，绝不把 unknown 写成 fail
+  if (repoStatus === 'missing') {
+    push('repo-reachable', 'fail', '仓库不可达', 'manifest.json 返回 404，仓库可能已删除或改为私有');
+  } else if (repoStatus === 'unknown') {
+    push(
+      'repo-reachable',
+      'unknown',
+      '仓库可达性未确定',
+      `网络层失败（${record.repoStatusReason || '原因未记录'}），本次结论不可用；需重试`,
+    );
+  } else if (repoStatus === 'ok') {
+    push('repo-reachable', 'info', '仓库可达', 'manifest.json 已成功读取');
+  } else {
+    // unchecked：调用方传入的是未核验记录，不应静默跳过
+    push('repo-reachable', 'unknown', '尚未核验仓库可达性', '未读取 manifest.json，无可判定信息');
+  }
+
+  // 2. manifest 完整性
+  if (manifest) {
+    const required = ['id', 'name', 'version', 'minAppVersion', 'author'];
+    const missing = required.filter((k) => !manifest[k]);
+    if (missing.length) {
+      push('manifest-complete', 'warn', 'manifest 缺字段', `缺少：${missing.join(', ')}`, missing);
+    } else {
+      push('manifest-complete', 'info', 'manifest 必填字段齐全', required.join(', '));
+    }
+
+    if (manifest.id && record.id && manifest.id !== record.id) {
+      push(
+        'manifest-id-match',
+        'fail',
+        'manifest.id 与注册表 id 不一致',
+        `注册表 ${record.id} ≠ manifest ${manifest.id}`,
+      );
+    }
+  } else if (repoStatus === 'ok') {
+    push('manifest-complete', 'fail', 'manifest 不可解析', record.manifestError || '未取得有效 JSON');
+  }
+
+  // 3. 注册表元数据质量
+  const metaMissing = [];
+  if (!record.description) metaMissing.push('description');
+  if (!record.author) metaMissing.push('author');
+  if (!record.repo) metaMissing.push('repo');
+  if (metaMissing.length) {
+    push('registry-meta', 'warn', '注册表元数据缺失', `缺少：${metaMissing.join(', ')}`, metaMissing);
+  }
+
+  // 4. 许可证 —— 未知就是未知
+  if (license?.status === 'found') {
+    if (license.detection?.confidence === 'matched') {
+      push(
+        'license-declared',
+        'info',
+        `许可证：${license.detection.spdx}`,
+        `${license.file}（${license.detection.note}）`,
+        license.detection.evidence,
+      );
+    } else if (license.detection?.confidence === 'ambiguous') {
+      push(
+        'license-declared',
+        'warn',
+        '许可证特征冲突',
+        license.detection.note,
+        license.detection.candidates,
+      );
+    } else {
+      push('license-declared', 'warn', '许可证无法识别', license.detection.note || '原文不匹配已知模板');
+    }
+  } else if (license?.status === 'missing') {
+    push('license-declared', 'warn', '仓库未提供许可证文件', `已尝试：${license.tried?.join(', ')}`);
+  } else if (license?.status === 'unknown') {
+    push('license-declared', 'unknown', '许可证状态未确定', `抓取失败（${license.reason || '网络'}），不可据此判断无许可证`);
+  }
+
+  // 5. 官方下架记录 —— 这是唯一权威的失效信号
+  if (removedEntry) {
+    push('official-removed', 'fail', '官方已下架', `原因：${removedEntry.reason || '未说明'}`);
+  }
+
+  // 6. 官方版本弃用
+  if (deprecationEntry?.length) {
+    const isCurrentDeprecated =
+      manifest?.version && deprecationEntry.includes(manifest.version);
+    push(
+      'deprecated-version',
+      isCurrentDeprecated ? 'fail' : 'warn',
+      isCurrentDeprecated ? '当前版本已被官方标记弃用' : '存在被弃用的历史版本',
+      `弃用版本：${deprecationEntry.join(', ')}`,
+      deprecationEntry,
+    );
+  }
+
+  // 7. 维护活跃度（基于官方 stats 的 updated 字段，事实陈述，不给「健康」结论）
+  //    注意字段名以 toRecord 产出的 updatedAt 为准（此前的 stats.updated 取法
+  //    与之不匹配，导致该项从未触发——由渲染后的 DOM 文本核查发现）。
+  const lastUpdated = record.updatedAt ?? record.stats?.updated ?? null;
+  if (lastUpdated) {
+    const days = Math.floor((Date.now() - lastUpdated) / 86400000);
+    push(
+      'last-update',
+      days > 730 ? 'warn' : 'info',
+      `最近更新：${days} 天前`,
+      new Date(lastUpdated).toISOString(),
+      { updatedAt: lastUpdated },
+    );
+  }
+
+  // 8. versions.json 缺失（影响低版本用户能否回退）
+  if (repoStatus === 'ok' && versionsMap === null) {
+    push(
+      'versions-map',
+      'info',
+      '未提供 versions.json',
+      '低版本应用无法自动回退到兼容的旧版插件；非错误，属上游常态',
+    );
+  }
+
+  // 9. 安全评估能力缺失 —— 必须显式声明，而不是假装检查过。
+  //    但这是对每个插件都成立的能力边界，不参与状态汇总。
+  push(
+    'security-baseline',
+    'unknown',
+    '无官方安全评分可查',
+    '该生态不存在公开的安全审计/评分接口；本工具不做代码审计，不给出「安全」结论',
+    null,
+    true,
+  );
+
+  // 10. 版本兼容性 —— 必须进入状态汇总。
+  //     若只把它显示在「版本与兼容性」栏而不参与 summarize，会出现
+  //     「要求 1.20.0、用户 1.14.5」却整体判为 ok 的误导性结论（实测抓出）。
+  if (ctx.appVersion) {
+    const compat = checkCompatibility({
+      minAppVersion: record.minAppVersion,
+      appVersion: ctx.appVersion,
+      versionsMap: record.versionsMap,
+      pluginVersion: record.version,
+    });
+    if (compat.verdict === 'incompatible') {
+      push(
+        'version-compat',
+        'fail',
+        '与你的应用版本不兼容',
+        compat.reason,
+        compat.basis,
+      );
+    } else if (compat.verdict === 'undetermined') {
+      push('version-compat', 'unknown', '兼容性未确定', compat.reason, compat.basis);
+    } else {
+      push('version-compat', 'info', '版本要求满足', compat.reason, compat.basis);
+    }
+  }
+
+  return checks;
+}
+
+/**
+ * 汇总整体状态。只看**可判定项**（advisory=false）。
+ * 优先级：fail > unknown > warn > ok
+ * 注意 warn 单独成档：它表示「有已知瑕疵但未确认失效」，与 ok 不同。
+ */
+function summarize(checks) {
+  const decisive = checks.filter((c) => !c.advisory);
+  if (decisive.some((c) => c.level === 'fail')) return 'fail';
+  if (decisive.some((c) => c.level === 'unknown')) return 'unknown';
+  if (decisive.some((c) => c.level === 'warn')) return 'warn';
+  return 'ok';
+}
+
+
+/* ===== src/indexer.mjs ===== */
+/**
+ * 索引构建与搜索。
+ *
+ * 职责：把 5 个独立数据源合并成统一记录，并提供可解释的搜索。
+ * 纪律：合并时**不填充**缺失字段，缺就是 null，让界面如实显示。
+ */
+
+
+
+/** 简单并发池，避免对 raw.githubusercontent.com 打出过多并发连接。 */
+async function pool(items, worker, concurrency = 6) {
+  const out = new Array(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      out[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
+  return out;
+}
+
+/**
+ * 拉取全部基础数据源。
+ * 每个源单独记录状态与时间戳，某个源失败不影响其它源可用。
+ *
+ * opts.cacheDir 存在时：先用缓存（带 sha256 校验），缓存缺失/失配的源再走网络。
+ * opts.cacheOnly 为真时：只读缓存，不发起任何网络请求（离线模式）。
+ */
+async function loadSources(opts = {}) {
+  const startedAt = Date.now();
+  const { cacheOnly = false, cacheDir = null } = opts;
+
+  let cached = null;
+  if (cacheDir) {
+    try {
+      cached = await loadCache(cacheDir);
+    } catch {
+      cached = null; // 缓存不存在或损坏，静默回退到网络
+    }
+  }
+
+  const entries = await Promise.all(
+    Object.values(SOURCES).map(async (src) => {
+      const hit = cached?.sources?.[src.id];
+      if (hit && hit.state === 'ok') {
+        return [
+          src.id,
+          { ...hit, label: src.label, sourceUrl: src.url, note: src.note },
+        ];
+      }
+      if (cacheOnly) {
+        return [
+          src.id,
+          {
+            state: 'missing',
+            reason: hit?.reason || 'not_in_cache',
+            label: src.label,
+            sourceUrl: src.url,
+            note: src.note,
+            body: null,
+          },
+        ];
+      }
+      const res = await fetchJson(src.url, opts);
+      return [src.id, { ...res, label: src.label, sourceUrl: src.url, note: src.note }];
+    }),
+  );
+
+  const sources = Object.fromEntries(entries);
+
+  // 缓存命中时对象里只有 body 字符串，没有 data；这里统一补解析，
+  // 否则会出现「5 个源都显示 ok，但统计/下架/版本全为 0」的静默错误
+  // （此缺陷由离线模式实测抓出）。
+  for (const s of Object.values(sources)) {
+    if (s.state === 'ok' && s.data === undefined && typeof s.body === 'string') {
+      try {
+        s.data = JSON.parse(s.body);
+      } catch (err) {
+        s.state = 'invalid';
+        s.reason = `json_parse:${err.message}`;
+      }
+    }
+  }
+
+  const finalRegistry = sources.registry?.data;
+
+  if (!Array.isArray(finalRegistry)) {
+    const reason =
+      sources.registry?.state === 'unknown'
+        ? `注册表抓取失败（${sources.registry.reason}）`
+        : sources.registry?.reason === 'not_in_cache'
+          ? '离线模式下缓存中缺少注册表'
+          : `注册表内容异常（state=${sources.registry?.state}）`;
+    const err = new Error(reason);
+    err.sources = sources;
+    throw err;
+  }
+
+  return {
+    sources,
+    registry: finalRegistry,
+    stats: sources.stats?.data && typeof sources.stats.data === 'object' ? sources.stats.data : {},
+    removed: Array.isArray(sources.removed?.data) ? sources.removed.data : [],
+    deprecation:
+      sources.deprecation?.data && typeof sources.deprecation.data === 'object'
+        ? sources.deprecation.data
+        : {},
+    desktop:
+      sources.desktop?.data && typeof sources.desktop.data === 'object' ? sources.desktop.data : {},
+    fetchedAt: startedAt,
+    fromCache: Boolean(cached),
+    cacheSavedAt: cached?.meta?.savedAt ?? null,
+  };
+}
+
+/** 把原始注册表条目转成统一记录。不做任何字段补全。 */
+function toRecord(entry, bundle) {
+  const stats = bundle.stats[entry.id] || null;
+  const versions = stats
+    ? Object.keys(stats).filter((k) => k !== 'downloads' && k !== 'updated')
+    : [];
+
+  return {
+    id: entry.id ?? null,
+    name: entry.name ?? null,
+    author: entry.author ?? null,
+    description: entry.description ?? null,
+    repo: entry.repo ?? null,
+    // 以下字段在注册表中并不存在，必须为 null 而非猜测
+    version: null,
+    minAppVersion: null,
+    license: null,
+    downloads: stats?.downloads ?? null,
+    updatedAt: stats?.updated ?? null,
+    knownVersions: versions,
+    removedEntry: bundle.removed.find((r) => r.id === entry.id) || null,
+    deprecationEntry: bundle.deprecation[entry.id] || null,
+    repoStatus: 'unchecked',
+    sources: {
+      registry: SOURCES.registry.url,
+      stats: SOURCES.stats.url,
+      manifest: entry.repo ? manifestUrl(entry.repo) : null,
+    },
+  };
+}
+
+/**
+ * 深度核验单个插件：拉 manifest、versions.json、许可证文件。
+ * 返回的新记录里每个字段都带来源链接，便于界面回溯。
+ */
+async function verifyRecord(record, opts = {}) {
+  if (!record.repo) {
+    return {
+      ...record,
+      repoStatus: 'missing',
+      repoStatusReason: '注册表未提供 repo 字段',
+      checksReady: true,
+    };
+  }
+
+  const manifestRes = await fetchResource(manifestUrl(record.repo), opts);
+  let manifest = null;
+  let manifestError = null;
+
+  if (manifestRes.state === 'ok') {
+    try {
+      manifest = JSON.parse(manifestRes.body);
+    } catch (err) {
+      manifestError = `manifest JSON 解析失败：${err.message}`;
+    }
+  }
+
+  // versions.json 缺失是常态（实测样本约半数没有），404 不是错误
+  const versionsRes = await fetchResource(versionsUrl(record.repo), opts);
+  let versionsMap = null;
+  if (versionsRes.state === 'ok') {
+    try {
+      versionsMap = JSON.parse(versionsRes.body);
+    } catch {
+      versionsMap = null;
+    }
+  }
+
+  // 许可证：逐个候选名试探，第一个 200 即为准
+  let license = { status: 'unknown', tried: [], reason: 'not_attempted' };
+  const tried = [];
+  for (const filename of LICENSE_FILENAMES) {
+    tried.push(filename);
+    const res = await fetchResource(licenseUrl(record.repo, filename), {
+      ...opts,
+      retries: 1,
+    });
+    if (res.state === 'ok') {
+      license = {
+        status: 'found',
+        file: filename,
+        url: licenseUrl(record.repo, filename),
+        text: res.body.slice(0, 8000),
+        detection: detectLicense(res.body),
+        tried,
+        fetchedAt: res.fetchedAt,
+      };
+      break;
+    }
+    if (res.state === 'unknown') {
+      // 网络不确定：不能继续断言「没有许可证」，停下来标记未知
+      license = {
+        status: 'unknown',
+        tried,
+        reason: res.reason,
+        url: licenseUrl(record.repo, filename),
+      };
+      break;
+    }
+  }
+  if (license.status === 'unknown' && license.reason === 'not_attempted') {
+    // 全部候选都明确 404
+    license = { status: 'missing', tried, reason: 'all_candidates_404' };
+  } else if (license.status !== 'found' && license.status !== 'unknown') {
+    license = { status: 'missing', tried, reason: 'all_candidates_404' };
+  }
+
+  return {
+    ...record,
+    manifest,
+    manifestError,
+    versionsMap,
+    license,
+    version: manifest?.version ?? null,
+    minAppVersion: manifest?.minAppVersion ?? null,
+    authorUrl: manifest?.authorUrl ?? null,
+    isDesktopOnly: manifest?.isDesktopOnly ?? null,
+    fundingUrl: manifest?.fundingUrl ?? null,
+    repoStatus: manifestRes.state,
+    repoStatusReason: manifestRes.reason || null,
+    fetchedAt: Date.now(),
+    sources: {
+      ...record.sources,
+      license: license.url || null,
+      versions: versionsUrl(record.repo),
+    },
+  };
+}
+
+/**
+ * 搜索。可解释：返回每条命中命中的字段与位置，而不是黑盒打分。
+ * 排序权重：名称完全匹配 > 名称前缀 > 名称包含 > 作者 > 描述。
+ */
+function search(records, query, options = {}) {
+  const { limit = 50, includeRemoved = true, licenseFilter = null, minAppVersion = null } = options;
+  const q = (query || '').trim().toLowerCase();
+
+  let pool = records;
+  if (!includeRemoved) pool = pool.filter((r) => !r.removedEntry);
+  if (licenseFilter) {
+    pool = pool.filter((r) => {
+      if (licenseFilter === 'unknown') return !r.license || r.license.status !== 'found' || !r.license.detection?.spdx;
+      return r.license?.detection?.spdx === licenseFilter;
+    });
+  }
+
+  if (!q) {
+    return pool.slice(0, limit).map((r) => ({ record: r, score: 0, matched: [] }));
+  }
+
+  const scored = [];
+  for (const r of pool) {
+    const matched = [];
+    let score = 0;
+    const name = (r.name || '').toLowerCase();
+    const id = (r.id || '').toLowerCase();
+    const author = (r.author || '').toLowerCase();
+    const desc = (r.description || '').toLowerCase();
+    const repo = (r.repo || '').toLowerCase();
+
+    if (name === q || id === q) {
+      score += 100;
+      matched.push({ field: 'name', kind: 'exact' });
+    } else if (name.startsWith(q) || id.startsWith(q)) {
+      score += 60;
+      matched.push({ field: 'name', kind: 'prefix' });
+    } else if (name.includes(q) || id.includes(q)) {
+      score += 35;
+      matched.push({ field: 'name', kind: 'contains' });
+    }
+    if (author.includes(q)) {
+      score += 15;
+      matched.push({ field: 'author', kind: 'contains' });
+    }
+    if (desc.includes(q)) {
+      score += 8;
+      matched.push({ field: 'description', kind: 'contains' });
+    }
+    if (repo.includes(q)) {
+      score += 5;
+      matched.push({ field: 'repo', kind: 'contains' });
+    }
+    if (score > 0) scored.push({ record: r, score, matched });
+  }
+
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    // 同分时下载量高者优先，但缺失下载量不参与排序（避免把 null 当 0 压到末尾）
+    const da = a.record.downloads ?? -1;
+    const db = b.record.downloads ?? -1;
+    if (db !== da) return db - da;
+    return (a.record.name || '').localeCompare(b.record.name || '');
+  });
+
+  return scored.slice(0, limit);
+}
+
+/** 数据新鲜度与局限说明，界面必须展示。 */
+function describeCoverage(bundle) {
+  const states = Object.entries(bundle.sources).map(([id, s]) => ({
+    id,
+    label: s.label,
+    state: s.state,
+    status: s.status ?? null,
+    reason: s.reason ?? null,
+    url: s.sourceUrl,
+    fetchedAt: s.fetchedAt ?? null,
+    fromCache: Boolean(s.fromCache),
+  }));
+
+  const registryCount = bundle.registry.length;
+  const statsCount = Object.keys(bundle.stats).length;
+  const removedCount = bundle.removed.length;
+
+  const limitations = [
+    '注册表本身不含版本、许可证与最低应用版本；这些字段仅在深度核验后才有值，未核验时显示为「未核验」而非空字符串。',
+    '该生态不存在公开的安全审计或评分接口，本工具不提供「安全」结论，只提供可观测事实。',
+    '下载统计与最近更新时间来自官方 stats 文件，其更新频率由上游决定，不代表当前时刻的真实值。',
+    '许可证识别基于原文文本特征匹配，不是法律意见；冲突或无法识别时保留为未知。',
+    '网络受限时 raw.githubusercontent.com 会间歇性连接失败，此时结论标记为「未确定」，不可当作失效。',
+  ];
+
+  if (bundle.fromCache) {
+    const ageH = bundle.cacheSavedAt ? (Date.now() - bundle.cacheSavedAt) / 3600000 : null;
+    limitations.unshift(
+      `本次使用了本地缓存，缓存写入于 ${new Date(bundle.cacheSavedAt).toISOString()}（约 ${ageH === null ? '?' : ageH.toFixed(1)} 小时前）；注册表内容可能已落后于上游。`,
+    );
+  }
+
+  return {
+    fetchedAt: bundle.fetchedAt,
+    fromCache: Boolean(bundle.fromCache),
+    cacheSavedAt: bundle.cacheSavedAt ?? null,
+    registryCount,
+    statsCount,
+    removedCount,
+    desktopMinimum: bundle.desktop?.minimumVersion ?? null,
+    desktopLatest: bundle.desktop?.latestVersion ?? null,
+    states,
+    limitations,
+  };
+}
+
+
+/* ===== web/app.js ===== */
+/* 应用主逻辑。依赖被内联到同一作用域的模块函数。 */
+/* global loadSources, toRecord, verifyRecord, search, describeCoverage, pool, runChecks, summarize, checkCompatibility, licenseClass */
+
+const $ = (id) => document.getElementById(id);
+
+const state = {
+  bundle: null,
+  coverage: null,
+  records: [],          // 全量记录（含未核验）
+  verified: new Map(),  // id -> 已核验记录
+  query: '',
+  licenseFilter: '',
+  stateFilter: '',
+  hideRemoved: false,
+  selectedId: null,
+  appVersion: '1.14.5',
+  results: [],
+  verifying: false,
+};
+
+const esc = (s) =>
+  String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const fmtNum = (n) => (n === null || n === undefined ? null : n.toLocaleString('zh-CN'));
+
+function fmtDate(ms) {
+  if (!ms) return null;
+  const d = new Date(ms);
+  const pad = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function relDays(ms) {
+  if (!ms) return null;
+  const days = Math.floor((Date.now() - ms) / 86400000);
+  if (days <= 0) return '今天';
+  if (days === 1) return '昨天';
+  if (days < 30) return `${days} 天前`;
+  if (days < 365) return `${Math.floor(days / 30)} 个月前`;
+  return `${(days / 365).toFixed(1)} 年前`;
+}
+
+/* ---------------- 数据加载 ---------------- */
+
+async function boot() {
+  try {
+    const bundle = await loadSources({ timeoutMs: 20000, retries: 3 });
+    state.bundle = bundle;
+    state.coverage = describeCoverage(bundle);
+    state.records = bundle.registry.map((e) => toRecord(e, bundle));
+    renderFreshness();
+    renderFoot();
+    renderResults();
+  } catch (err) {
+    $('freshDot').className = 'dot failed';
+    $('freshText').textContent = `数据源加载失败：${err.message}`;
+    $('listMeta').textContent = '加载失败';
+    $('detail').innerHTML = `<div class="empty">
+      <div class="big">无法加载官方注册表</div>
+      <div>${esc(err.message)}</div>
+      <div style="max-width:520px;margin-top:10px">本工具不内置数据快照（官方仓库未声明许可证，不在包内重新分发数据集），因此必须联网读取。请检查网络后重试。</div>
+      <button class="btn primary" style="margin-top:14px" onclick="location.reload()">重试</button>
+    </div>`;
+  }
+}
+
+function renderFreshness() {
+  const cov = state.coverage;
+  const anyFail = cov.states.some((s) => s.state !== 'ok');
+  $('freshDot').className = 'dot' + (anyFail ? ' stale' : '');
+  $('freshText').innerHTML =
+    `注册表 ${fmtNum(cov.registryCount)} 条 · 拉取于 ${esc(fmtDate(cov.fetchedAt))}` +
+    (anyFail ? ` · <span style="color:var(--c-warn)">${cov.states.filter((s) => s.state !== 'ok').length} 个源未取到</span>` : '');
+}
+
+function renderFoot() {
+  const cov = state.coverage;
+  $('footData').textContent =
+    `数据源：官方 obsidian-releases（注册表 ${fmtNum(cov.registryCount)} · 统计 ${fmtNum(cov.statsCount)} · 下架 ${fmtNum(cov.removedCount)}）`;
+}
+
+/* ---------------- 结果列表 ---------------- */
+
+function currentPool() {
+  let pool = state.records;
+  if (state.hideRemoved) pool = pool.filter((r) => !r.removedEntry);
+  if (state.stateFilter) {
+    pool = pool.filter((r) => {
+      const v = state.verified.get(r.id);
+      if (state.stateFilter === 'unverified') return !v;
+      return v && v.status === state.stateFilter;
+    });
+  }
+  if (state.licenseFilter) {
+    pool = pool.filter((r) => {
+      const v = state.verified.get(r.id);
+      const spdx = v?.license?.detection?.spdx || null;
+      if (state.licenseFilter === 'unknown') return !spdx;
+      return spdx === state.licenseFilter;
+    });
+  }
+  return pool;
+}
+
+function renderResults() {
+  const pool = currentPool();
+  const hits = search(pool, state.query, { limit: 200, includeRemoved: true });
+  state.results = hits;
+
+  const verifiedCount = state.verified.size;
+  $('listMeta').textContent =
+    `${hits.length} 条结果 / 共 ${fmtNum(pool.length)} 条` +
+    (verifiedCount ? ` · 已核验 ${verifiedCount}` : '') +
+    (state.query ? ` · 查询「${state.query}」` : '');
+
+  const rows = hits
+    .map(({ record, matched }) => {
+      const v = state.verified.get(record.id);
+      const status = v ? v.status : 'unverified';
+      const badge =
+        status === 'unverified'
+          ? '<span class="badge neutral">未核验</span>'
+          : `<span class="badge ${status}">${status}</span>`;
+      const lic = v?.license?.detection?.spdx;
+      const metaBits = [
+        record.repo ? esc(record.repo) : null,
+        v?.version ? `v${esc(v.version)}` : null,
+        lic ? esc(lic) : null,
+        record.downloads !== null ? `${fmtNum(record.downloads)} 下载` : '下载量未知',
+      ].filter(Boolean);
+      const matchedTxt = matched?.length
+        ? matched.map((m) => `${m.field}:${m.kind}`).join(' · ')
+        : '';
+      return `<button class="row ${record.id === state.selectedId ? 'active' : ''}" data-id="${esc(record.id)}">
+        <div class="rname">${esc(record.name || record.id)} ${badge}</div>
+        <div class="rmeta">${metaBits.join(' · ')}</div>
+        ${record.description ? `<div class="rdesc">${esc(record.description)}</div>` : '<div class="rdesc">（注册表未提供描述）</div>'}
+        ${matchedTxt ? `<div class="matched">命中 ${esc(matchedTxt)}</div>` : ''}
+      </button>`;
+    })
+    .join('');
+
+  $('rows').innerHTML = rows || `<div class="empty" style="height:200px"><div>没有匹配项</div></div>`;
+
+  $('rows').querySelectorAll('.row').forEach((el) => {
+    el.addEventListener('click', () => selectRecord(el.dataset.id));
+  });
+
+  if (state.selectedId && !hits.find((h) => h.record.id === state.selectedId)) {
+    // 选中项被筛掉时不强改视图，避免打断阅读
+  }
+}
+
+function selectRecord(id) {
+  state.selectedId = id;
+  renderResults();
+  renderDetail();
+}
+
+/* ---------------- 详情 ---------------- */
+
+const LVL_LABEL = { info: 'info', warn: 'warn', fail: 'fail', unknown: '未知' };
+
+function kv(label, value, opts = {}) {
+  const { mono = false, empty = '未提供' } = opts;
+  if (value === null || value === undefined || value === '') {
+    return `<dt>${esc(label)}</dt><dd class="none">${esc(empty)}</dd>`;
+  }
+  return `<dt>${esc(label)}</dt><dd class="${mono ? 'mono' : ''}">${value}</dd>`;
+}
+
+function renderDetail() {
+  const id = state.selectedId;
+  const record = state.records.find((r) => r.id === id);
+  if (!record) return;
+  const v = state.verified.get(id);
+  const el = $('detail');
+
+  const status = v ? v.status : 'unverified';
+  const statusBadge =
+    status === 'unverified'
+      ? '<span class="badge neutral">未核验</span>'
+      : `<span class="badge ${status}">${status}</span>`;
+
+  const licDet = v?.license?.detection;
+  const licBadge = (() => {
+    if (!v) return '<span class="badge neutral">未核验</span>';
+    if (v.license?.status === 'unknown') return '<span class="badge unknown">未确定</span>';
+    if (v.license?.status === 'missing') return '<span class="badge warn">仓库无许可证文件</span>';
+    if (licDet?.confidence === 'matched') {
+      const cls = licenseClass(licDet.spdx);
+      return `<span class="badge ok">${esc(licDet.spdx)}</span> <span class="badge neutral">${esc(cls.label)}</span>`;
+    }
+    if (licDet?.confidence === 'ambiguous') return '<span class="badge warn">特征冲突</span>';
+    return '<span class="badge warn">无法识别</span>';
+  })();
+
+  // 兼容性：三态，绝不把未确定写成可用
+  let compatHtml = '<span class="badge neutral">未核验</span>';
+  let compatReason = '';
+  if (v) {
+    const c = checkCompatibility({
+      minAppVersion: v.minAppVersion,
+      appVersion: state.appVersion,
+      versionsMap: v.versionsMap,
+      pluginVersion: v.version,
+    });
+    const map = {
+      compatible: '<span class="badge ok">版本满足</span>',
+      incompatible: c.hasFallback
+        ? '<span class="badge warn">需回退版本</span>'
+        : '<span class="badge fail">不兼容</span>',
+      undetermined: '<span class="badge unknown">未确定</span>',
+    };
+    compatHtml = map[c.verdict];
+    compatReason = c.reason;
+  }
+
+  const checksHtml = v
+    ? v.checks
+        .map(
+          (c) => `<div class="check">
+        <span class="lvl ${c.level}">${esc(LVL_LABEL[c.level] || c.level)}</span>
+        <div class="body">
+          <div class="ctitle">${esc(c.title)}${c.advisory ? ' <span class="badge neutral" style="font-size:10px">常驻声明</span>' : ''}</div>
+          <div class="cdetail">${esc(c.detail)}</div>
+          ${c.basis ? `<div class="cbasis">${esc(typeof c.basis === 'string' ? c.basis : JSON.stringify(c.basis, null, 1))}</div>` : ''}
+        </div>
+      </div>`,
+        )
+        .join('')
+    : '<div class="notice">尚未深度核验。点击右上「深度核验当前结果」，或核验此单项，才会读取该仓库的 manifest.json、versions.json 与许可证原文。</div>';
+
+  const versionsHtml =
+    v && v.knownVersions?.length
+      ? esc(v.knownVersions.slice(-12).join(', ')) + (v.knownVersions.length > 12 ? ` …共 ${v.knownVersions.length} 个` : '')
+      : v
+        ? '（下载统计中无版本记录）'
+        : '未核验';
+
+  el.innerHTML = `
+    <div class="d-head">
+      <div>
+        <div class="d-title">${esc(record.name || record.id)}</div>
+        <div class="d-id">${esc(record.id)}</div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        ${statusBadge}${licBadge}
+      </div>
+    </div>
+
+    <p class="d-desc">${record.description ? esc(record.description) : '<span style="color:var(--c-ink-3)">（注册表未提供描述）</span>'}</p>
+
+    ${v && v.status !== 'ok' ? `<div class="notice" style="margin-top:14px">
+      本次判定为 <strong style="color:var(--c-ink)">${esc(v.status)}</strong>。
+      ${v.status === 'unknown' ? '其中包含未确定的检查项（多为网络受限导致），不代表该插件有问题，请重试以获得结论。' : ''}
+      ${v.status === 'fail' ? '存在确定的失效或不一致信号，详见下方检查明细。' : ''}
+      ${v.status === 'warn' ? '存在已确认的瑕疵（如缺少许可证文件），但不构成失效。' : ''}
+    </div>` : ''}
+
+    <section class="block">
+      <h3>元数据</h3>
+      <dl class="kv">
+        ${kv('名称', esc(record.name || ''))}
+        ${kv('插件 ID', esc(record.id || ''), { mono: true })}
+        ${kv('作者', esc(record.author || ''))}
+        ${kv('仓库', record.repo ? `<a href="https://github.com/${esc(record.repo)}" target="_blank" rel="noopener">${esc(record.repo)}</a>` : null, { mono: true })}
+        ${kv('下载量', record.downloads !== null ? fmtNum(record.downloads) : null, { empty: '统计中无记录' })}
+        ${kv('最近更新', record.updatedAt ? `${fmtDate(record.updatedAt)}（${relDays(record.updatedAt)}）` : null, { empty: '统计中无记录' })}
+        ${kv('仅桌面端', v ? (v.isDesktopOnly ? '是' : '否') : null, { empty: '未核验' })}
+      </dl>
+    </section>
+
+    <section class="block">
+      <h3>版本与兼容性</h3>
+      <dl class="kv">
+        ${kv('当前版本', v?.version ? esc(v.version) : null, { mono: true, empty: '未核验' })}
+        ${kv('最低应用版本', v?.minAppVersion ? esc(v.minAppVersion) : null, { mono: true, empty: '未核验或未声明' })}
+        ${kv('你的版本', esc(state.appVersion || '（未填写）'), { mono: true })}
+        ${kv('兼容判定', compatHtml + (compatReason ? ` <span style="color:var(--c-ink-3);font-size:12px">— ${esc(compatReason)}</span>` : ''))}
+        ${kv('历史版本', versionsHtml, { mono: true })}
+      </dl>
+      <div class="notice" style="margin-top:10px">
+        「版本满足」仅表示插件声明的 <code>minAppVersion</code> 不高于你填写的版本，是<strong>声明层面的比较</strong>，
+        不等于实测可用。未填写版本时不作任何推断。
+      </div>
+    </section>
+
+    <section class="block">
+      <h3>许可证</h3>
+      <dl class="kv">
+        ${kv('识别结果', licBadge)}
+        ${kv('判定依据', licDet?.note ? esc(licDet.note) : null, { empty: v?.license?.status === 'missing' ? '仓库未提供许可证文件' : '未核验' })}
+        ${kv('文件名', v?.license?.file ? esc(v.license.file) : null, { mono: true, empty: v ? '—' : '未核验' })}
+        ${kv('原文链接', v?.license?.url ? `<a href="${esc(v.license.url)}" target="_blank" rel="noopener">${esc(v.license.url)}</a>` : null, { empty: '—' })}
+      </dl>
+      ${v?.license?.text ? `<div class="lic-text" style="margin-top:10px">${esc(v.license.text.slice(0, 1200))}</div>` : ''}
+      ${licDet?.evidence?.length ? `<div class="cbasis" style="margin-top:8px">命中特征：\n${esc(licDet.evidence.join('\n'))}</div>` : ''}
+    </section>
+
+    <section class="block">
+      <h3>基础检查（${v ? v.checks.filter((c) => !c.advisory).length + ' 项可判定 · ' + v.checks.filter((c) => c.advisory).length + ' 项常驻声明' : '未运行'}）</h3>
+      ${checksHtml}
+    </section>
+
+    <section class="block">
+      <h3>来源</h3>
+      <dl class="kv">
+        ${kv('注册表条目', record.sources.registry ? `<a href="${esc(record.sources.registry)}" target="_blank" rel="noopener">${esc(record.sources.registry)}</a>` : null, { mono: true })}
+        ${kv('manifest.json', record.sources.manifest ? `<a href="${esc(record.sources.manifest)}" target="_blank" rel="noopener">${esc(record.sources.manifest)}</a>` : null, { mono: true })}
+        ${kv('versions.json', v?.sources?.versions ? `<a href="${esc(v.sources.versions)}" target="_blank" rel="noopener">${esc(v.sources.versions)}</a>` : null, { mono: true, empty: v ? '该仓库无此文件' : '未核验' })}
+        ${kv('下载统计', `<a href="${esc(record.sources.stats)}" target="_blank" rel="noopener">${esc(record.sources.stats)}</a>`, { mono: true })}
+        ${record.removedEntry ? kv('官方下架记录', `原因：${esc(record.removedEntry.reason || '未说明')}`) : ''}
+        ${record.deprecationEntry?.length ? kv('官方弃用版本', esc(record.deprecationEntry.join(', ')), { mono: true }) : ''}
+      </dl>
+    </section>
+
+    <div style="margin-top:22px">
+      <button class="btn" id="verifyOne">${v ? '重新核验此插件' : '核验此插件'}</button>
+    </div>
+  `;
+
+  $('verifyOne').addEventListener('click', () => verifyOne(id));
+}
+
+/* ---------------- 核验 ---------------- */
+
+async function verifyOne(id) {
+  const record = state.records.find((r) => r.id === id);
+  if (!record) return;
+  $('verifyOne') && ($('verifyOne').disabled = true);
+  const btn = $('verifyOne');
+  if (btn) btn.innerHTML = '<span class="spinner"></span> 核验中…';
+
+  const v = await verifyRecord(record, { timeoutMs: 20000, retries: 2 });
+  // 展开顺序必须是 record 在前、v 在后：v 带回了 repoStatus / version 等核验结果，
+  // 若写反，record 的 repoStatus='unchecked' 会把这些结果覆盖掉（此缺陷已实测抓出）。
+  const merged = { ...record, ...v };
+  const checks = runChecks(merged, { appVersion: state.appVersion });
+  merged.checks = checks;
+  merged.status = summarize(checks);
+  state.verified.set(id, merged);
+  renderResults();
+  renderDetail();
+}
+
+async function verifyAll() {
+  if (state.verifying) return;
+  const targets = state.results.slice(0, 60).map((h) => h.record);
+  if (!targets.length) return;
+  state.verifying = true;
+  $('verifyAll').disabled = true;
+
+  let done = 0;
+  const meta = $('listMeta');
+
+  await pool(
+    targets,
+    async (record) => {
+      const v = await verifyRecord(record, { timeoutMs: 20000, retries: 2 });
+      const merged = { ...record, ...v };
+      const checks = runChecks(merged, { appVersion: state.appVersion });
+      merged.checks = checks;
+      merged.status = summarize(checks);
+      state.verified.set(record.id, merged);
+      done += 1;
+      meta.textContent = `核验中 ${done}/${targets.length}…（每个插件需读取 manifest 与许可证原文）`;
+      return null;
+    },
+    4,
+  );
+
+  state.verifying = false;
+  $('verifyAll').disabled = false;
+  renderResults();
+  renderDetail();
+}
+
+/* ---------------- 局限说明 ---------------- */
+
+function renderLimits() {
+  const cov = state.coverage;
+  $('limitsBody').innerHTML = `
+    <div style="margin-bottom:16px;font-family:var(--mono);font-size:12px;color:var(--c-ink-3)">
+      数据拉取时间：${esc(fmtDate(cov.fetchedAt))}　|　注册表 ${fmtNum(cov.registryCount)} 条　|　统计 ${fmtNum(cov.statsCount)} 条　|　下架 ${fmtNum(cov.removedCount)} 条
+    </div>
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--c-ink-3);margin:0 0 10px">各数据源状态</h3>
+    ${cov.states
+      .map(
+        (s) => `<div class="src-row">
+        <span class="badge ${s.state === 'ok' ? 'ok' : s.state === 'missing' ? 'warn' : 'unknown'}">${esc(s.state)}</span>
+        <span style="flex:1">${esc(s.label)}${s.reason ? `　<span style="color:var(--c-warn)">${esc(s.reason)}</span>` : ''}</span>
+        <a href="${esc(s.url)}" target="_blank" rel="noopener" style="font-size:11px">源</a>
+      </div>`,
+      )
+      .join('')}
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--c-ink-3);margin:20px 0 10px">局限</h3>
+    <ul>${cov.limitations.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:var(--c-ink-3);margin:20px 0 10px">关于数据再分发</h3>
+    <ul>
+      <li>官方 obsidian-releases 仓库未声明许可证（LICENSE 文件 404，GitHub license API 亦返回 404）。因此本工具<strong>不在安装包内附带任何数据快照</strong>，全部数据在运行时从官方地址读取，仅缓存在当前浏览器会话中。</li>
+      <li>插件自身的许可证各自独立，需以各仓库 LICENSE 原文为准；本工具的识别结果仅为文本特征匹配，不构成法律意见。</li>
+    </ul>
+  `;
+}
+
+/* ---------------- 事件绑定 ---------------- */
+
+let debounce;
+$('q').addEventListener('input', (e) => {
+  clearTimeout(debounce);
+  debounce = setTimeout(() => {
+    state.query = e.target.value;
+    renderResults();
+  }, 140);
+});
+
+$('appVer').addEventListener('input', (e) => {
+  state.appVersion = e.target.value.trim();
+  if (state.selectedId) renderDetail();
+});
+
+$('fLic').addEventListener('change', (e) => {
+  state.licenseFilter = e.target.value;
+  renderResults();
+});
+$('fState').addEventListener('change', (e) => {
+  state.stateFilter = e.target.value;
+  renderResults();
+});
+$('toggleRemoved').addEventListener('click', (e) => {
+  state.hideRemoved = !state.hideRemoved;
+  e.target.textContent = state.hideRemoved ? '显示已下架' : '隐藏已下架';
+  renderResults();
+});
+$('verifyAll').addEventListener('click', verifyAll);
+
+$('openLimits').addEventListener('click', () => {
+  if (state.coverage) renderLimits();
+  $('limitsDlg').showModal();
+});
+$('closeLimits').addEventListener('click', () => $('limitsDlg').close());
+
+boot();
+
+})();</script>
+</body>
+</html>

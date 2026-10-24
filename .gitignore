@@ -1,0 +1,14 @@
+# 截图与验收产物（不入包）
+shots/
+
+# 临时生成的验收页
+shots/*.html
+
+# 本地缓存：由用户显式生成，不入包
+data/cache/
+
+# 端到端证据（可由 tools/e2e.mjs 重新生成）
+data/e2e/
+
+node_modules/
+*.log
