@@ -78,9 +78,9 @@ node tools/cli.mjs search git --offline --cache-dir data/cache
 
 图形界面：直接双击 `web/dist/ext-audit.html`，无需服务器。
 
-在线演示：<https://llinok111.github.io/ext-audit/>
+在线演示：<https://llinok111.github.io/ext-audit/>（部署验证记录见 `docs/ONLINE.md`）
 
-> 演示页会实时从官方地址读取数据，因此需要能访问 `raw.githubusercontent.com`。演示页内的「深度核验」会逐个读取插件仓库的 manifest 与许可证原文，响应速度取决于网络。
+> 演示页会实时从官方地址读取数据，因此需要能访问 `raw.githubusercontent.com`。实测页面加载时读到的注册表条数随上游变化（2026-10-24 21:53 为 9,410 条，同日下午为 9,389 条），可见其确实读取实时数据而非内置快照。演示页内的「深度核验」会逐个读取插件仓库的 manifest 与许可证原文，响应速度取决于网络。
 
 ## 输出示例
 
